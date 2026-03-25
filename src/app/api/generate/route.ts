@@ -336,7 +336,7 @@ async function callModel(provider: Provider, model: string, prompt: PromptPair) 
     return callAnthropic(model, prompt);
   }
 
-  return callOpenAI(model, prompt);
+  return callOpenAICompatible(model, prompt);
 }
 
 async function callAnthropic(model: string, prompt: PromptPair) {
@@ -385,14 +385,17 @@ async function callAnthropic(model: string, prompt: PromptPair) {
   );
 }
 
-async function callOpenAI(model: string, prompt: PromptPair) {
+async function callOpenAICompatible(model: string, prompt: PromptPair) {
   const apiKey = process.env.OPENAI_API_KEY;
+  const baseUrl = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 
   if (!apiKey) {
     throw new Error("缺少 OPENAI_API_KEY。");
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+
+  const response = await fetch(`${normalizedBaseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -400,41 +403,46 @@ async function callOpenAI(model: string, prompt: PromptPair) {
     },
     body: JSON.stringify({
       model,
-      instructions: prompt.systemPrompt,
-      input: prompt.userPrompt,
-      max_output_tokens: prompt.maxTokens,
-      reasoning: {
-        effort: "low",
-      },
-      text: {
-        verbosity: "medium",
-      },
+      temperature: 0.9,
+      max_tokens: prompt.maxTokens,
+      messages: [
+        {
+          role: "system",
+          content: prompt.systemPrompt,
+        },
+        {
+          role: "user",
+          content: prompt.userPrompt,
+        },
+      ],
     }),
   });
 
   const data = (await response.json()) as {
     error?: { message?: string };
-    output_text?: string;
-    output?: Array<{
-      type?: string;
-      content?: Array<{ type?: string; text?: string }>;
+    choices?: Array<{
+      message?: {
+        content?: string | Array<{ type?: string; text?: string }>;
+      };
     }>;
   };
 
   if (!response.ok) {
-    throw new Error(data.error?.message || "OpenAI 请求失败。");
+    throw new Error(data.error?.message || "OpenAI 兼容接口请求失败。");
   }
 
-  if (data.output_text) {
-    return data.output_text.trim();
+  const content = data.choices?.[0]?.message?.content;
+
+  if (typeof content === "string") {
+    return content.trim();
   }
 
-  const fallback = data.output
-    ?.flatMap((item) => item.content ?? [])
-    .filter((item) => item.type === "output_text")
-    .map((item) => item.text ?? "")
-    .join("\n")
-    .trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((item) => item.text ?? "")
+      .join("\n")
+      .trim();
+  }
 
-  return fallback || "";
+  return "";
 }
