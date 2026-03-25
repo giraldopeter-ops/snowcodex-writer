@@ -768,7 +768,7 @@ export function WriterStudio() {
                   onChange={(value) => updateField("provider", value as Provider)}
                   options={[
                     { label: "Anthropic / Claude", value: "anthropic" },
-                    { label: "OpenAI", value: "openai" },
+                    { label: "OpenAI / Kimi", value: "openai" },
                   ]}
                 />
                 <InputField
